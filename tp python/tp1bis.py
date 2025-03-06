@@ -1,94 +1,87 @@
 import numpy as np
 
-def reshape_vector(x, N1, N2):
+def composite_fft(x, N1, N2):
     """
-    Reshape le vecteur x (de taille N1*N2) en une matrice de taille (N1, N2)
-    en utilisant l'ordre colonne pour être cohérent avec la factorisation.
-    """
-    # Ici, l'ordre 'F' (Fortran) permet d'obtenir x(n1,n2) = x[n1 + n2*N1]
-    return np.reshape(x, (N1, N2), order='F')
-
-def weightsCompute(N1, N2, N):
-    """
-    Calcule la matrice de poids de taille (N1, N2) avec :
-       W[n1, k2] = exp(-2j*pi * n1 * k2 / N)
-    pour n1 = 0,...,N1-1 et k2 = 0,...,N2-1.
-    """
-    n1 = np.arange(N1).reshape(N1, 1)
-    k2 = np.arange(N2).reshape(1, N2)
-    return np.exp(-2j * np.pi * n1 * k2 / N)
-
-def fft1d(x, N1, N2):
-    """
-    Implémente l'algorithme de la FFT composite pour un vecteur x de taille N1*N2.
+    Compute the FFT of an input vector x (of length N = N1 * N2)
+    using a composite FFT algorithm and then reorder the result so that
+    it matches the order of np.fft.fft(x).
     
-    L'algorithme s'effectue en quatre étapes :
-      1. Reshape du vecteur x en une matrice X de taille (N1, N2)
-      2. Calcul de la DFT de taille N1 (sur la première dimension)
-      3. Multiplication par les facteurs de twiddle exp(-2j*pi*k1*n2/N)
-      4. Calcul de la DFT de taille N2 (sur la deuxième dimension)
-    
-    La sortie est ensuite reconstituée en un vecteur de taille N en utilisant l'ordre colonne.
+    The algorithm:
+      1. For each 0 <= n1 < N1, extract the subsequence:
+             x[n1], x[n1+N1], x[n1+2*N1], ...  (length N2)
+      2. Compute an N2-point FFT on each subsequence (row FFT).
+      3. Multiply each element by the twiddle factor:
+             exp(-2πi * n1 * k2 / (N1*N2))
+         where k2 is the index from the row FFT.
+      4. For each k2, compute an N1-point FFT over the n1 index (column FFT).
+      5. Flatten the resulting matrix in Fortran (column-major) order.
+      6. Reorder the flattened result so that if the composite output
+         is naturally indexed as i = n1 + N1*n2, we reassign it to the index
+         j = n2 + N2*n1, which matches np.fft.fft(x).
     """
     N = N1 * N2
-
-    # Étape 1 : Reshape
-    x_matrix = reshape_vector(x, N1, N2)
+    x = np.asarray(x)
+    if x.size != N:
+        raise ValueError("Length of input x must equal N1 * N2.")
     
-    # Étape 2 : DFT sur la première dimension (de taille N1)
-    n1 = np.arange(N1).reshape(N1, 1)
-    k1 = np.arange(N1).reshape(1, N1)
-    WN1 = np.exp(-2j * np.pi * n1 * k1 / N1)
-    # Pour chaque colonne, on calcule la DFT de taille N1 :
-    Y = np.dot(WN1, x_matrix)
+    # Step 1: Extract sub-sequences. For each n1 (0 <= n1 < N1),
+    # the row n1 contains: x[n1], x[n1+N1], x[n1+2*N1], ..., length N2.
+    X = np.empty((N1, N2), dtype=complex)
+    for n1 in range(N1):
+        X[n1, :] = x[n1::N1]
     
-    # Étape 3 : Application des facteurs twiddle
-    # Pour chaque élément Y[k1, n2], on multiplie par exp(-2j*pi*(k1*n2)/N)
-    k1_vals = np.arange(N1).reshape(N1, 1)
-    n2_vals = np.arange(N2).reshape(1, N2)
-    twiddle = np.exp(-2j * np.pi * k1_vals * n2_vals / N)
-    Z = Y * twiddle
+    # Step 2: Compute the FFT along each row (each sub-sequence of length N2).
+    Y = np.fft.fft(X, axis=1)
     
-    # Étape 4 : DFT sur la deuxième dimension (de taille N2)
-    n2 = np.arange(N2).reshape(N2, 1)
-    k2 = np.arange(N2).reshape(1, N2)
-    WN2 = np.exp(-2j * np.pi * n2 * k2 / N2)
-    # Pour chaque ligne (indice k1 fixe), on calcule la DFT sur n2 :
-    X_matrix = np.dot(Z, WN2)
+    # Step 3: Multiply by the twiddle factors.
+    # Here n1 is the row index and k2 is the frequency index from the row FFT.
+    n1_idx = np.arange(N1).reshape(N1, 1)  # shape (N1, 1)
+    k2_idx = np.arange(N2).reshape(1, N2)    # shape (1, N2)
+    twiddle = np.exp(-2j * np.pi * n1_idx * k2_idx / N)
+    Y_twiddled = Y * twiddle
     
-    # Reconstitution en un vecteur de taille N en utilisant l'ordre colonne pour respecter l'indexation
-    X_result = np.reshape(X_matrix, (N,), order='F')
+    # Step 4: Compute the FFT along the columns (over the n1 index) for each column.
+    Z = np.fft.fft(Y_twiddled, axis=0)
     
-    return X_result
+    # Step 5: Flatten the (N1 x N2) matrix in Fortran order.
+    # This ordering gives composite indices:
+    # composite_index = n1 + N1 * n2.
+    composite_result = np.reshape(Z, N, order='F')
+    
+    # Step 6: Reorder the output so that it matches np.fft.fft(x).
+    # The direct FFT ordering uses the mapping: direct_index = n2 + N2 * n1.
+    result_correct = np.empty_like(composite_result)
+    for n1 in range(N1):
+        for n2 in range(N2):
+            comp_index = n1 + N1 * n2       # current index in composite_result
+            direct_index = n2 + N2 * n1       # desired index in direct FFT order
+            result_correct[direct_index] = composite_result[comp_index]
+    
+    return result_correct
 
-# ---------------------------
-# Partie test de l'algorithme
-# ---------------------------
+if __name__ == '__main__':
+    # Set the composite dimensions: choose N1 and N2 so that N = N1*N2.
+    N1, N2 = 4, 8  # For example, N = 32
+    N = N1 * N2
 
-# Paramètres
-N1 = 3
-N2 = 4
-N = N1 * N2
+    # Create a random complex input vector of length N.
+    x = np.random.random(N) + 1j * np.random.random(N)
 
-# Génération du signal aléatoire X de taille N multiplié par 10.
-# Ici, on génère un signal complexe (on peut aussi utiliser un signal réel si désiré)
-np.random.seed(0)  # pour rendre l'exemple reproductible
-X = 10 * (np.random.rand(N) + 1j * np.random.rand(N))
+    # Compute the composite FFT.
+    comp_result = composite_fft(x, N1, N2)
+    # Compute the direct FFT using NumPy.
+    direct_result = np.fft.fft(x)
 
-# Calcul de la FFT via l'algorithme composite personnalisé
-X_custom = fft1d(X, N1, N2)
-
-# Calcul de la FFT avec la fonction prédéfinie numpy.fft.fft
-X_builtin = np.fft.fft(X)
-
-# Affichage des résultats
-print("Signal X (d'entrée) :")
-print(X)
-print("\nFFT personnalisée (X_custom) :")
-print(X_custom)
-print("\nFFT de numpy.fft (X_builtin) :")
-print(X_builtin)
-
-# Comparaison : calcul de l'erreur (norme de la différence)
-error = np.linalg.norm(X_custom - X_builtin)
-print("\nErreur (norme de la différence) :", error)
+    # Print both results.
+    np.set_printoptions(precision=8, suppress=True)
+    print("Composite FFT result (reordered):")
+    print(comp_result)
+    print("\nDirect FFT result:")
+    print(direct_result)
+    print("\nDifference (norm):", np.linalg.norm(comp_result - direct_result))
+    
+    # Verify that the composite FFT matches the direct FFT.
+    if np.allclose(comp_result, direct_result):
+        print("\nThe composite FFT matches the direct FFT.")
+    else:
+        print("\nMismatch between composite FFT and direct FFT.")
