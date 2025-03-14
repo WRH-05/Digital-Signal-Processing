@@ -1,4 +1,4 @@
-'''import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
 
 A=1
@@ -42,7 +42,4 @@ plt.legend()
 plt.grid(True)
 
 plt.tight_layout()
-plt.show()'''
-
-import cv2 
-print(cv2.__version__)
+plt.show()
