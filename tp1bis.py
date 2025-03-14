@@ -1,94 +1,56 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
-def reshape_vector(x, N1, N2):
-    """
-    Reshape le vecteur x (de taille N1*N2) en une matrice de taille (N1, N2)
-    en utilisant l'ordre colonne pour être cohérent avec la factorisation.
-    """
-    # Ici, l'ordre 'F' (Fortran) permet d'obtenir x(n1,n2) = x[n1 + n2*N1]
-    return np.reshape(x, (N1, N2), order='F')
-
-def weightsCompute(N1, N2, N):
-    """
-    Calcule la matrice de poids de taille (N1, N2) avec :
-       W[n1, k2] = exp(-2j*pi * n1 * k2 / N)
-    pour n1 = 0,...,N1-1 et k2 = 0,...,N2-1.
-    """
-    n1 = np.arange(N1).reshape(N1, 1)
-    k2 = np.arange(N2).reshape(1, N2)
-    return np.exp(-2j * np.pi * n1 * k2 / N)
-
-def fft1d(x, N1, N2):
-    """
-    Implémente l'algorithme de la FFT composite pour un vecteur x de taille N1*N2.
-    
-    L'algorithme s'effectue en quatre étapes :
-      1. Reshape du vecteur x en une matrice X de taille (N1, N2)
-      2. Calcul de la DFT de taille N1 (sur la première dimension)
-      3. Multiplication par les facteurs de twiddle exp(-2j*pi*k1*n2/N)
-      4. Calcul de la DFT de taille N2 (sur la deuxième dimension)
-    
-    La sortie est ensuite reconstituée en un vecteur de taille N en utilisant l'ordre colonne.
-    """
+def fftComposite(x, N1, N2):
     N = N1 * N2
+    x = np.asarray(x)
+    if x.size != N:
+        raise ValueError("La taille de x doit être égale à N1 * N2.")
+    X = np.empty((N1, N2), dtype=complex)
+    for n1 in range(N1):
+        X[n1, :] = x[n1::N1]
+    Y = np.fft.fft(X, axis=1)
+    n1_idx = np.arange(N1).reshape(N1, 1)
+    k2_idx = np.arange(N2).reshape(1, N2)
+    poids = np.exp(-2j * np.pi * n1_idx * k2_idx / N)
+    Y_rot = Y * poids
+    Z = np.fft.fft(Y_rot, axis=0)
+    res_composite = np.reshape(Z, N, order='F')
+    res_final = np.empty_like(res_composite)
+    for n1 in range(N1):
+        for n2 in range(N2):
+            idx_composite = n1 + N1 * n2
+            idx_direct = n2 + N2 * n1
+            res_final[idx_direct] = res_composite[idx_composite]
+    return res_final
 
-    # Étape 1 : Reshape
-    x_matrix = reshape_vector(x, N1, N2)
+if __name__ == '__main__':
+
+    N1, N2 = 4, 8
+    N = N1 * N2
+    x = np.random.random(N) + 1j * np.random.random(N)
     
-    # Étape 2 : DFT sur la première dimension (de taille N1)
-    n1 = np.arange(N1).reshape(N1, 1)
-    k1 = np.arange(N1).reshape(1, N1)
-    WN1 = np.exp(-2j * np.pi * n1 * k1 / N1)
-    # Pour chaque colonne, on calcule la DFT de taille N1 :
-    Y = np.dot(WN1, x_matrix)
+    resultat_composite = fftComposite(x, N1, N2)
+    resultat_direct = np.fft.fft(x)
+    np.set_printoptions(precision=8, suppress=True)
+    print("Résultat FFT composite (réordonné) :")
+    print(resultat_composite)
+    print("\nRésultat FFT direct :")
+    print(resultat_direct)
+    print("\nDifférence (norme) :", np.linalg.norm(resultat_composite - resultat_direct))
+
+    if np.allclose(resultat_composite, resultat_direct):
+        print("\nLes deux résultats sont identiques.")
+    else:
+        print("\nLes deux résultats sont différents.")
+
     
-    # Étape 3 : Application des facteurs twiddle
-    # Pour chaque élément Y[k1, n2], on multiplie par exp(-2j*pi*(k1*n2)/N)
-    k1_vals = np.arange(N1).reshape(N1, 1)
-    n2_vals = np.arange(N2).reshape(1, N2)
-    twiddle = np.exp(-2j * np.pi * k1_vals * n2_vals / N)
-    Z = Y * twiddle
-    
-    # Étape 4 : DFT sur la deuxième dimension (de taille N2)
-    n2 = np.arange(N2).reshape(N2, 1)
-    k2 = np.arange(N2).reshape(1, N2)
-    WN2 = np.exp(-2j * np.pi * n2 * k2 / N2)
-    # Pour chaque ligne (indice k1 fixe), on calcule la DFT sur n2 :
-    X_matrix = np.dot(Z, WN2)
-    
-    # Reconstitution en un vecteur de taille N en utilisant l'ordre colonne pour respecter l'indexation
-    X_result = np.reshape(X_matrix, (N,), order='F')
-    
-    return X_result
-
-# ---------------------------
-# Partie test de l'algorithme
-# ---------------------------
-
-# Paramètres
-N1 = 3
-N2 = 4
-N = N1 * N2
-
-# Génération du signal aléatoire X de taille N multiplié par 10.
-# Ici, on génère un signal complexe (on peut aussi utiliser un signal réel si désiré)
-np.random.seed(0)  # pour rendre l'exemple reproductible
-X = 10 * (np.random.rand(N) + 1j * np.random.rand(N))
-
-# Calcul de la FFT via l'algorithme composite personnalisé
-X_custom = fft1d(X, N1, N2)
-
-# Calcul de la FFT avec la fonction prédéfinie numpy.fft.fft
-X_builtin = np.fft.fft(X)
-
-# Affichage des résultats
-print("Signal X (d'entrée) :")
-print(X)
-print("\nFFT personnalisée (X_custom) :")
-print(X_custom)
-print("\nFFT de numpy.fft (X_builtin) :")
-print(X_builtin)
-
-# Comparaison : calcul de l'erreur (norme de la différence)
-error = np.linalg.norm(X_custom - X_builtin)
-print("\nErreur (norme de la différence) :", error)
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.abs(resultat_composite), 'r', marker='o', label='FFT Composite')
+    plt.plot(np.abs(resultat_direct), 'b', marker='x', label='FFT Standard')
+    plt.title("Comparaison des amplitudes FFT Composite vs FFT Standard")
+    plt.xlabel("Échantillons")
+    plt.ylabel("Amplitude")
+    plt.legend()
+    plt.grid(True)
+    plt.show()

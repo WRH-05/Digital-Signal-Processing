@@ -7,7 +7,7 @@ N = N1 * N2
 x = np.random.rand(N) * 10
 resizedMatrice = x.reshape(N1, N2)
 
-def computeWeight(N1, N2, N):
+def weightsCompute(N1, N2, N):
     W = np.zeros((N1, N2), dtype=complex)
     for n1 in range(N1):
         for k2 in range(N2):
@@ -25,8 +25,8 @@ def fft1d(matrix, W1, W2):
     X = X2.flatten()
     return X
 
-W1 = computeWeight(N1, N1, N)
-W2 = computeWeight(N2, N2, N)
+W1 = weightsCompute(N1, N1, N)
+W2 = weightsCompute(N2, N2, N)
 
 X = fft1d(resizedMatrice, W1, W2)
 
