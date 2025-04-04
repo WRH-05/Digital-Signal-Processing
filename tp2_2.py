@@ -93,4 +93,3 @@ plt.title('Keep 10 coefficients')
 plt.imshow(Compress(img,z_scan_mask(10,8),8))
 plt.axis('off')
 plt.show()
-#what
