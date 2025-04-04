@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import math
 import cv2
 import skimage.io as io
 from dct import dct_2d
@@ -70,9 +69,39 @@ def Compress(img,mask,N):
             img_dct[m:m+N,n:n+N]=iblock
     return img_dct
 
+# Define functions to compute Mean Squared Error and PSNR
+def compute_mse(original, compressed):
+    return np.mean((original - compressed) ** 2)
+
+def compute_psnr(original, compressed):
+    mse = compute_mse(original, compressed)
+    if mse == 0:
+        return float('inf')
+    max_pixel = 1.0  # assuming the image is normalized between 0 and 1
+    return 20 * np.log10(max_pixel / np.sqrt(mse))
+
+# Generate compressed images with different numbers of retained coefficients
+img_1  = Compress(img, z_scan_mask(1, 8), 8)
+img_3  = Compress(img, z_scan_mask(3, 8), 8)
+img_10 = Compress(img, z_scan_mask(10, 8), 8)
+
+# Compute MSE and PSNR for each compressed image
+mse_1  = compute_mse(img, img_1)
+psnr_1 = compute_psnr(img, img_1)
+mse_3  = compute_mse(img, img_3)
+psnr_3 = compute_psnr(img, img_3)
+mse_10  = compute_mse(img, img_10)
+psnr_10 = compute_psnr(img, img_10)
+
+# show MSE and PSNR values
+print(f"MSE for 1 coefficient: {mse_1:.4f}, PSNR: {psnr_1:.2f} dB")
+print(f"MSE for 3 coefficients: {mse_3:.4f}, PSNR: {psnr_3:.2f} dB")
+print(f"MSE for 10 coefficients: {mse_10:.4f}, PSNR: {psnr_10:.2f} dB")
+
 # Images keeping only 1, 3, and 10 low-frequency coefficients
-plt.figure(figsize=(16,4))
+plt.figure(figsize=(16, 4))
 plt.gray()
+
 plt.subplot(141)
 plt.title('Original image')
 plt.imshow(img)
@@ -80,16 +109,19 @@ plt.axis('off')
 
 plt.subplot(142)
 plt.title('Keep 1 coefficient')
-plt.imshow(Compress(img,z_scan_mask(1,8),8))
-plt.axis('off')
+plt.imshow(img_1)
+#plt.axis('off')
+plt.xlabel(f"MSE: {mse_1:.4f}\nPSNR: {psnr_1:.2f} dB")
 
 plt.subplot(143)
 plt.title('Keep 3 coefficients')
-plt.imshow(Compress(img,z_scan_mask(3,8),8))
-plt.axis('off')
+plt.imshow(img_3)
+#plt.axis('off')
+plt.xlabel(f"MSE: {mse_3:.4f}\nPSNR: {psnr_3:.2f} dB")
 
 plt.subplot(144)
 plt.title('Keep 10 coefficients')
-plt.imshow(Compress(img,z_scan_mask(10,8),8))
-plt.axis('off')
+plt.imshow(img_10)
+#plt.axis('off')
+plt.xlabel(f"MSE: {mse_10:.4f}\nPSNR: {psnr_10:.2f} dB")
 plt.show()
