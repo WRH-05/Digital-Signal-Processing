@@ -64,7 +64,7 @@ plt.show()
 
 '''
 # Butterworth filter design
-def butter_bandpass(lowcut, highcut, fs, order=3):
+def butter_bandpass(lowcut, highcut, fs, order=4):
     nyquist = 0.5 * fs
     low = lowcut / nyquist
     high = highcut / nyquist
